@@ -146,18 +146,31 @@ jobs:
           rm -rf src/gopkg.in
           mkdir -p src/github.com src/gopkg.in
           
-          echo "📥 开始重新克隆依赖..."
-          git clone -- https://gitee.com/mirrors/log4go.git src/github.com/alecthomas/log4go
-          git clone -- https://gitee.com/ngrok-install/websocket.git src/github.com/gorilla/websocket
-          git clone -- https://gitee.com/ngrok-install/go-vhost.git src/github.com/inconshreveable/go-vhost
-          git clone -- https://gitee.com/ngrok-install/mousetrap.git src/github.com/inconshreveable/mousetrap
-          git clone -- https://gitee.com/ngrok-install/go-bindata.git src/github.com/jteeuwen/go-bindata
-          git clone -- https://gitee.com/mirrors_addons/osext.git src/github.com/kardianos/osext
-          git clone -- https://gitee.com/ngrok-install/binarydist.git src/github.com/kr/binarydist
-          git clone -- https://gitee.com/GoLibs/go-runewidth.git src/github.com/mattn/go-runewidth
-          git clone -- https://gitee.com/ngrok-install/termbox-go.git src/github.com/nsf/termbox-go
-          git clone -- https://gitee.com/mirrors/go-metrics.git src/github.com/rcrowley/go-metrics
+          echo "📥 开始重新克隆 github 依赖..."
+          git clone --depth=1 https://gitee.com/mirrors/log4go.git src/github.com/alecthomas/log4go
+          git clone --depth=1 https://gitee.com/ngrok-install/websocket.git src/github.com/gorilla/websocket
+          git clone --depth=1 https://gitee.com/ngrok-install/go-vhost.git src/github.com/inconshreveable/go-vhost
+          git clone --depth=1 https://gitee.com/ngrok-install/mousetrap.git src/github.com/inconshreveable/mousetrap
+          git clone --depth=1 https://gitee.com/ngrok-install/go-bindata.git src/github.com/jteeuwen/go-bindata
+          git clone --depth=1 https://gitee.com/mirrors_addons/osext.git src/github.com/kardianos/osext
+          git clone --depth=1 https://gitee.com/ngrok-install/binarydist.git src/github.com/kr/binarydist
+          git clone --depth=1 https://gitee.com/GoLibs/go-runewidth.git src/github.com/mattn/go-runewidth
+          git clone --depth=1 https://gitee.com/ngrok-install/termbox-go.git src/github.com/nsf/termbox-go
+          git clone --depth=1 https://gitee.com/mirrors/go-metrics.git src/github.com/rcrowley/go-metrics
+
+          echo "📥 开始克隆 gopkg.in 依赖（使用镜像）..."
+          git clone --depth=1 https://gitee.com/ngrok-install/go-update.git src/gopkg.in/inconshreveable/go-update.v0
+          git clone --depth=1 https://gitee.com/ngrok-install/yaml.v1.git src/gopkg.in/yaml.v1
+
           echo "✅ 所有依赖已强制覆盖克隆完成"
+
+      - name: 检查 gopkg.in 依赖是否就位
+        run: |
+          echo "=== gopkg.in 目录结构 ==="
+          find src/gopkg.in -maxdepth 3 -type d
+          echo "=== 关键文件检查 ==="
+          ls -la src/gopkg.in/inconshreveable/go-update.v0/update.go 2>/dev/null || echo "❌ update.go 缺失"
+          ls -la src/gopkg.in/yaml.v1/yaml.go 2>/dev/null || echo "❌ yaml.go 缺失"
 
       - name: 编译 (${{ matrix.os }}-${{ matrix.arch }})
         env:
@@ -170,6 +183,8 @@ jobs:
           make release-client
           echo "编译产物:"
           ls -la bin/
+          echo "=== 输出目录结构 ==="
+          find bin -type f
 
       - name: 获取版本号
         id: version
@@ -177,17 +192,17 @@ jobs:
           VERSION="v$(date +'%Y.%m.%d-%H%M%S')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # ========== 打包开始 ==========
-
-      # --- 统一确定二进制文件所在目录 ---
-      - name: 确定二进制文件目录
-        id: bin-dir
+      - name: 确定二进制文件源目录
+        id: bin-src
         run: |
+          # 根据 ngrok Makefile 逻辑，Linux 编译产物直接放在 bin/ 根目录
+          # 其他平台的产物在 bin/${GOOS}_${GOARCH}/ 子目录
           if [ "${{ matrix.os }}" = "linux" ]; then
-            echo "bin_dir=bin" >> $GITHUB_OUTPUT
+            echo "src_dir=bin" >> $GITHUB_OUTPUT
           else
-            echo "bin_dir=bin/${{ matrix.goos }}_${{ matrix.goarch }}" >> $GITHUB_OUTPUT
+            echo "src_dir=bin/${{ matrix.goos }}_${{ matrix.goarch }}" >> $GITHUB_OUTPUT
           fi
+          echo "📂 二进制文件源目录: ${{ steps.bin-src.outputs.src_dir }}"
 
       - name: 打包 deb
         if: matrix.os == 'linux'
@@ -196,25 +211,25 @@ jobs:
           ARCH="${{ matrix.arch }}"
           PKG_VER="${VERSION#v}"
           DEB_DIR="ngrok_${PKG_VER}_${ARCH}"
+          SRC_DIR="${{ steps.bin-src.outputs.src_dir }}"
 
           mkdir -p "$DEB_DIR/DEBIAN"
           mkdir -p "$DEB_DIR/usr/bin"
           mkdir -p "$DEB_DIR/usr/share/doc/ngrok"
 
-          # 使用统一后的二进制目录
-          cp "${{ steps.bin-dir.outputs.bin_dir }}/ngrok"  "$DEB_DIR/usr/bin/"
-          cp "${{ steps.bin-dir.outputs.bin_dir }}/ngrokd" "$DEB_DIR/usr/bin/" 2>/dev/null || true
+          # 复制客户端和服务端
+          cp "$SRC_DIR/ngrok"  "$DEB_DIR/usr/bin/"
+          cp "$SRC_DIR/ngrokd" "$DEB_DIR/usr/bin/" 2>/dev/null || true
           chmod +x "$DEB_DIR/usr/bin/"*
 
           cat > "$DEB_DIR/DEBIAN/control" << EOF
-          Package: ngrok
-          Version: $PKG_VER
-          Architecture: $ARCH
-          Maintainer: CI Bot <ci-bot@github.com>
-          Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }} (client + server)
-          EOF
+Package: ngrok
+Version: $PKG_VER
+Architecture: $ARCH
+Maintainer: CI Bot <ci-bot@github.com>
+Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }} (client + server)
+EOF
 
-          # 直接构建（dpkg-deb 生成的文件名 = 目录名 + .deb）
           dpkg-deb --build "$DEB_DIR"
           echo "✅ 生成: ${DEB_DIR}.deb"
 
@@ -224,28 +239,18 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           OS="${{ matrix.os }}"
           ARCH="${{ matrix.arch }}"
+          SRC_DIR="${{ steps.bin-src.outputs.src_dir }}"
 
           PKG_DIR="ngrok-${VERSION}-${OS}-${ARCH}"
           mkdir -p "$PKG_DIR"
 
-          BIN_DIR="${{ steps.bin-dir.outputs.bin_dir }}"
+          # 复制所有可执行文件（包括 ngrokd，如果有）
+          cp "$SRC_DIR/"* "$PKG_DIR/" 2>/dev/null || true
 
-          # 复制客户端
-          if [ -f "$BIN_DIR/ngrok" ]; then
-            cp "$BIN_DIR/ngrok" "$PKG_DIR/"
-          fi
-
-          # 复制服务端（如果有）
-          if [ -f "$BIN_DIR/ngrokd" ]; then
-            cp "$BIN_DIR/ngrokd" "$PKG_DIR/"
-          fi
-
-          # Windows 添加 .exe 后缀
+          # 为 Windows 可执行文件添加 .exe 后缀
           if [ "$OS" = "windows" ]; then
             for f in "$PKG_DIR"/*; do
-              base=$(basename "$f")
-              ext="${base##*.}"
-              if [ "$ext" != "exe" ]; then
+              if [ -f "$f" ] && [[ "$f" != *.exe ]]; then
                 mv "$f" "${f}.exe"
               fi
             done
@@ -253,17 +258,15 @@ jobs:
 
           # 添加说明文件
           cat > "$PKG_DIR/README.txt" << EOF
-          ngrok Custom Build
-          Domain: ${{ needs.issue-certs.outputs.cert_domain }}
-          Version: $VERSION
-          Platform: $OS / $ARCH
-          EOF
+ngrok Custom Build
+Domain: ${{ needs.issue-certs.outputs.cert_domain }}
+Version: $VERSION
+Platform: $OS / $ARCH
+EOF
 
           ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"
           echo "✅ 生成: $ZIP_FILE"
-
-      # ========== 打包结束 ==========
 
       - name: 上传构件
         uses: actions/upload-artifact@v4
@@ -306,9 +309,10 @@ jobs:
             **证书**: Let's Encrypt (Dynv6 DNS 验证)
             **构建时间**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
             ### 使用说明
-            - Linux deb 包包含客户端和服务端
-            - macOS/Windows zip 包仅包含客户端
-            - 证书已内置，启动客户端：`ngrok -hostname="${{ needs.issue-certs.outputs.cert_domain }}" 8080`
+            - Linux deb 包包含客户端 (ngrok) 和服务端 (ngrokd)
+            - macOS/Windows zip 包包含客户端，部分包含服务端
+            - 证书已内置，启动客户端示例：
+              `ngrok -hostname="${{ needs.issue-certs.outputs.cert_domain }}" 8080`
           files: ./release-files/*
           draft: false
           prerelease: false

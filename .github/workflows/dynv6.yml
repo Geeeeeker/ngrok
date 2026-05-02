@@ -190,29 +190,29 @@ jobs:
           
           # === 创建 README 文件（包含一条命令启动说明） ===
           cat > $DEB_DIR/usr/share/doc/ngrok/README.md << EOF
-# ngrok Custom Build for ${DOMAIN}
-
-## 🚀 启动方法（无需 ngrok.cfg）
-
-### 服务端
-\`\`\`bash
-./ngrokd -domain=${DOMAIN}
-\`\`\`
-
-### 客户端
-\`\`\`bash
-# 基本用法：将本地 8080 端口映射为 myapp 子域名
-./ngrok -hostname=myapp.${DOMAIN} 8080
-
-# 或者简写
-./ngrok -subdomain=myapp -hostname=${DOMAIN} 8080
-\`\`\`
-
-## 📅 构建信息
-- 版本: ${VERSION}
-- 构建时间: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-- 证书: Let's Encrypt (已内置)
-EOF
+          # ngrok Custom Build for ${DOMAIN}
+          
+          ## 🚀 启动方法（无需 ngrok.cfg）
+          
+          ### 服务端
+          \`\`\`bash
+          ./ngrokd -domain=${DOMAIN}
+          \`\`\`
+          
+          ### 客户端
+          \`\`\`bash
+          # 基本用法：将本地 8080 端口映射为 myapp 子域名
+          ./ngrok -hostname=myapp.${DOMAIN} 8080
+          
+          # 或者简写
+          ./ngrok -subdomain=myapp -hostname=${DOMAIN} 8080
+          \`\`\`
+          
+          ## 📅 构建信息
+          - 版本: ${VERSION}
+          - 构建时间: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          - 证书: Let's Encrypt (已内置)
+          EOF
           
           cat > $DEB_DIR/DEBIAN/control << EOF
           Package: ngrok
@@ -259,29 +259,29 @@ EOF
           
           # === 创建 README 文件（包含一条命令启动说明） ===
           cat > $PKG_DIR/README.md << EOF
-# ngrok Custom Build for ${DOMAIN}
-
-## 🚀 启动方法（无需 ngrok.cfg）
-
-### 服务端
-\`\`\`bash
-./ngrokd -domain=${DOMAIN}
-\`\`\`
-
-### 客户端
-\`\`\`bash
-# 基本用法：将本地 8080 端口映射为 myapp 子域名
-./ngrok -hostname=myapp.${DOMAIN} 8080
-
-# 或者简写
-./ngrok -subdomain=myapp -hostname=${DOMAIN} 8080
-\`\`\`
-
-## 📅 构建信息
-- 版本: ${VERSION}
-- 构建时间: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-- 证书: Let's Encrypt (已内置)
-EOF
+          # ngrok Custom Build for ${DOMAIN}
+          
+          ## 🚀 启动方法（无需 ngrok.cfg）
+          
+          ### 服务端
+          \`\`\`bash
+          ./ngrokd -domain=${DOMAIN}
+          \`\`\`
+          
+          ### 客户端
+          \`\`\`bash
+          # 基本用法：将本地 8080 端口映射为 myapp 子域名
+          ./ngrok -hostname=myapp.${DOMAIN} 8080
+          
+          # 或者简写
+          ./ngrok -subdomain=myapp -hostname=${DOMAIN} 8080
+          \`\`\`
+          
+          ## 📅 构建信息
+          - 版本: ${VERSION}
+          - 构建时间: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          - 证书: Let's Encrypt (已内置)
+          EOF
           
           ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"

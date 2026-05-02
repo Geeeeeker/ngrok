@@ -139,7 +139,6 @@ jobs:
           go install -a -v github.com/go-bindata/go-bindata/...@latest
           echo "✅ Go 环境和 go-bindata 准备完成"
 
-      # === 核心修复：强制删除后，严格按你的命令重新克隆依赖 ===
       - name: 强制覆盖下载所有依赖
         run: |
           echo "🧹 强制清理所有旧的依赖目录..."
@@ -178,6 +177,18 @@ jobs:
           VERSION="v$(date +'%Y.%m.%d-%H%M%S')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # ========== 打包开始 ==========
+
+      # --- 统一确定二进制文件所在目录 ---
+      - name: 确定二进制文件目录
+        id: bin-dir
+        run: |
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            echo "bin_dir=bin" >> $GITHUB_OUTPUT
+          else
+            echo "bin_dir=bin/${{ matrix.goos }}_${{ matrix.goarch }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: 打包 deb
         if: matrix.os == 'linux'
         run: |
@@ -185,31 +196,27 @@ jobs:
           ARCH="${{ matrix.arch }}"
           PKG_VER="${VERSION#v}"
           DEB_DIR="ngrok_${PKG_VER}_${ARCH}"
-          mkdir -p $DEB_DIR/DEBIAN $DEB_DIR/usr/bin $DEB_DIR/usr/share/doc/ngrok
-          
-          # 根据平台确定二进制文件路径
-          if [ "$ARCH" = "amd64" ]; then
-            # Linux amd64 特殊：直接在 bin/ 下
-            BIN_DIR="bin"
-          else
-            # 其他架构：在 bin/linux_arm64/ 等子目录
-            BIN_DIR="bin/linux_${ARCH}"
-          fi
-          
-          cp "$BIN_DIR/ngrok" $DEB_DIR/usr/bin/
-          cp "$BIN_DIR/ngrokd" $DEB_DIR/usr/bin/ 2>/dev/null || true
-          
-          cat > $DEB_DIR/DEBIAN/control << EOF
-          Package: ngrok
-          Version: $PKG_VER
-          Architecture: $ARCH
-          Maintainer: CI Bot <ci-bot@github.com>
-          Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }}
-          EOF
-          # 直接构建即可，构建目录名 DEB_DIR 的值就是最终的包名
-          dpkg-deb --build $DEB_DIR
-          # 设置变量，方便后续步骤引用。变量名 DEB_FILE 的值去掉路径，只保留文件名。
-          echo "deb_file=$(basename $DEB_DIR).deb" >> $GITHUB_OUTPUT
+
+          mkdir -p "$DEB_DIR/DEBIAN"
+          mkdir -p "$DEB_DIR/usr/bin"
+          mkdir -p "$DEB_DIR/usr/share/doc/ngrok"
+
+          # 使用统一后的二进制目录
+          cp "${{ steps.bin-dir.outputs.bin_dir }}/ngrok"  "$DEB_DIR/usr/bin/"
+          cp "${{ steps.bin-dir.outputs.bin_dir }}/ngrokd" "$DEB_DIR/usr/bin/" 2>/dev/null || true
+          chmod +x "$DEB_DIR/usr/bin/"*
+
+          cat > "$DEB_DIR/DEBIAN/control" << EOF
+Package: ngrok
+Version: $PKG_VER
+Architecture: $ARCH
+Maintainer: CI Bot <ci-bot@github.com>
+Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }} (client + server)
+EOF
+
+          # 直接构建（dpkg-deb 生成的文件名 = 目录名 + .deb）
+          dpkg-deb --build "$DEB_DIR"
+          echo "✅ 生成: ${DEB_DIR}.deb"
 
       - name: 打包 zip
         if: matrix.os != 'linux'
@@ -217,49 +224,46 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           OS="${{ matrix.os }}"
           ARCH="${{ matrix.arch }}"
-          PKG_DIR="ngrok-${OS}-${ARCH}"
-          mkdir -p $PKG_DIR
-          
-          # 确定二进制文件路径
-          BIN_DIR="bin/${OS}_${ARCH}"
-          
+
+          PKG_DIR="ngrok-${VERSION}-${OS}-${ARCH}"
+          mkdir -p "$PKG_DIR"
+
+          BIN_DIR="${{ steps.bin-dir.outputs.bin_dir }}"
+
+          # 复制客户端
           if [ -f "$BIN_DIR/ngrok" ]; then
-            cp "$BIN_DIR/ngrok" $PKG_DIR/
+            cp "$BIN_DIR/ngrok" "$PKG_DIR/"
           fi
-          
-          if [ "$OS" = "windows" ] && [ -f $PKG_DIR/ngrok ]; then
-            mv $PKG_DIR/ngrok $PKG_DIR/ngrok.exe
+
+          # 复制服务端（如果有）
+          if [ -f "$BIN_DIR/ngrokd" ]; then
+            cp "$BIN_DIR/ngrokd" "$PKG_DIR/"
           fi
-          
-          cat > $PKG_DIR/README.txt << EOF
-          ngrok Custom Build
-          Domain: ${{ needs.issue-certs.outputs.cert_domain }}
-          Version: $VERSION
-          Platform: $OS / $ARCH
-          EOF
+
+          # Windows 添加 .exe 后缀
+          if [ "$OS" = "windows" ]; then
+            for f in "$PKG_DIR"/*; do
+              base=$(basename "$f")
+              ext="${base##*.}"
+              if [ "$ext" != "exe" ]; then
+                mv "$f" "${f}.exe"
+              fi
+            done
+          fi
+
+          # 添加说明文件
+          cat > "$PKG_DIR/README.txt" << EOF
+ngrok Custom Build
+Domain: ${{ needs.issue-certs.outputs.cert_domain }}
+Version: $VERSION
+Platform: $OS / $ARCH
+EOF
+
           ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
-          zip -r "$ZIP_FILE" $PKG_DIR
+          zip -r "$ZIP_FILE" "$PKG_DIR"
           echo "✅ 生成: $ZIP_FILE"
 
-      - name: 打包 zip
-        if: matrix.os != 'linux'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          OS="${{ matrix.os }}"
-          ARCH="${{ matrix.arch }}"
-          PKG_DIR="ngrok-${OS}-${ARCH}"
-          mkdir -p $PKG_DIR
-          if [ -f bin/ngrok ]; then cp bin/ngrok $PKG_DIR/; fi
-          if [ "$OS" = "windows" ] && [ -f $PKG_DIR/ngrok ]; then mv $PKG_DIR/ngrok $PKG_DIR/ngrok.exe; fi
-          cat > $PKG_DIR/README.txt << EOF
-          ngrok Custom Build
-          Domain: ${{ needs.issue-certs.outputs.cert_domain }}
-          Version: $VERSION
-          Platform: $OS / $ARCH
-          EOF
-          ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
-          zip -r "$ZIP_FILE" $PKG_DIR
-          echo "✅ 生成: $ZIP_FILE"
+      # ========== 打包结束 ==========
 
       - name: 上传构件
         uses: actions/upload-artifact@v4

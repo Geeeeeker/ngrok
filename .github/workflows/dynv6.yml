@@ -115,28 +115,22 @@ jobs:
           name: ssl-certificates
           path: ./certs_temp
 
-      # 严格按照你提供的 txddns.sh 脚本逻辑处理证书
       - name: 处理证书并配置域名
         run: |
-          cd ./certs_temp
-          # 删除旧的命名
-          rm -f device.crt device.key rootCA.pem
-          # 重命名为 ngrok 需要的文件名
-          mv *.crt device.crt
-          mv *.key device.key
-          mv *.pem rootCA.pem
-          cd ..
+          # 查看下载的证书文件（调试用）
+          echo "📄 下载的证书文件:"
+          ls -la ./certs_temp/
           
           # 配置域名（重要：编译时会用到）
           DOMAIN="${{ needs.issue-certs.outputs.cert_domain }}"
           echo "NGROK_DOMAIN=$DOMAIN" >> $GITHUB_ENV
           
-          # 替换仓库中的默认证书
+          # 直接复制证书到对应位置（文件已由 acme.sh 正确命名）
           cp -f ./certs_temp/rootCA.pem ./assets/client/tls/ngrokroot.crt
           cp -f ./certs_temp/device.crt ./assets/server/tls/snakeoil.crt
           cp -f ./certs_temp/device.key ./assets/server/tls/snakeoil.key
           
-          echo "✅ 证书已处理，域名: $DOMAIN"
+          echo "✅ 证书已部署，域名: $DOMAIN"
 
       - name: 准备 Go 1.18 环境（手动安装，避免 actions/setup-go 缓存问题）
         run: |

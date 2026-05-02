@@ -147,6 +147,18 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           echo "🔨 编译 $GOOS/$GOARCH ..."
+
+          # 设置 GOPATH 为仓库根目录（因为依赖在 src/ 下）
+          export GOPATH="${{ github.workspace }}"
+          export PATH="$GOPATH/bin:$PATH"
+
+          # 关键的修复：
+          # 1. 不使用 make，绕过 Makefile 中错误的 'go get' 指令
+          # 2. 直接在本地编译已自带的 go-bindata
+          echo "📦 编译本地 go-bindata..."
+          go build -o bin/go-bindata github.com/jteeuwen/go-bindata/go-bindata
+
+          # 3. 现在可以安全地运行 make 了（make 会检测 bin/go-bindata 已存在）
           if [ "${{ matrix.package_type }}" = "deb" ]; then
             make release-server
             make release-client

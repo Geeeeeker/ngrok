@@ -223,12 +223,12 @@ jobs:
           chmod +x "$DEB_DIR/usr/bin/"*
 
           cat > "$DEB_DIR/DEBIAN/control" << EOF
-Package: ngrok
-Version: $PKG_VER
-Architecture: $ARCH
-Maintainer: CI Bot <ci-bot@github.com>
-Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }} (client + server)
-EOF
+          Package: ngrok
+          Version: $PKG_VER
+          Architecture: $ARCH
+          Maintainer: CI Bot <ci-bot@github.com>
+          Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }} (client + server)
+          EOF
 
           dpkg-deb --build "$DEB_DIR"
           echo "✅ 生成: ${DEB_DIR}.deb"
@@ -258,11 +258,11 @@ EOF
 
           # 添加说明文件
           cat > "$PKG_DIR/README.txt" << EOF
-ngrok Custom Build
-Domain: ${{ needs.issue-certs.outputs.cert_domain }}
-Version: $VERSION
-Platform: $OS / $ARCH
-EOF
+          ngrok Custom Build
+          Domain: ${{ needs.issue-certs.outputs.cert_domain }}
+          Version: $VERSION
+          Platform: $OS / $ARCH
+          EOF
 
           ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"

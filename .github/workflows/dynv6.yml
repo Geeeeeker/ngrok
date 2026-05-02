@@ -208,7 +208,6 @@ jobs:
           EOF
           dpkg-deb --build $DEB_DIR
           DEB_FILE="ngrok_${PKG_VER}_${ARCH}.deb"
-          mv $DEB_DIR.deb $DEB_FILE
           echo "✅ 生成: $DEB_FILE"
 
       - name: 打包 zip

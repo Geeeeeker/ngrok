@@ -147,20 +147,19 @@ jobs:
           mkdir -p src/github.com src/gopkg.in
           
           echo "📥 开始重新克隆 github 依赖..."
-          git clone --depth=1 https://gitee.com/mirrors/log4go.git src/github.com/alecthomas/log4go
-          git clone --depth=1 https://gitee.com/ngrok-install/websocket.git src/github.com/gorilla/websocket
-          git clone --depth=1 https://gitee.com/ngrok-install/go-vhost.git src/github.com/inconshreveable/go-vhost
-          git clone --depth=1 https://gitee.com/ngrok-install/mousetrap.git src/github.com/inconshreveable/mousetrap
-          git clone --depth=1 https://gitee.com/ngrok-install/go-bindata.git src/github.com/jteeuwen/go-bindata
-          git clone --depth=1 https://gitee.com/mirrors_addons/osext.git src/github.com/kardianos/osext
-          git clone --depth=1 https://gitee.com/ngrok-install/binarydist.git src/github.com/kr/binarydist
-          git clone --depth=1 https://gitee.com/GoLibs/go-runewidth.git src/github.com/mattn/go-runewidth
-          git clone --depth=1 https://gitee.com/ngrok-install/termbox-go.git src/github.com/nsf/termbox-go
-          git clone --depth=1 https://gitee.com/mirrors/go-metrics.git src/github.com/rcrowley/go-metrics
+          git clone --depth=1 https://github.com/alecthomas/log4go.git src/github.com/alecthomas/log4go
+          git clone --depth=1 https://github.com/gorilla/websocket.git src/github.com/gorilla/websocket
+          git clone --depth=1 https://github.com/inconshreveable/go-vhost.git src/github.com/inconshreveable/go-vhost
+          git clone --depth=1 https://github.com/inconshreveable/mousetrap.git src/github.com/inconshreveable/mousetrap
+          git clone --depth=1 https://github.com/jteeuwen/go-bindata.git src/github.com/jteeuwen/go-bindata
+          git clone --depth=1 https://github.com/kardianos/osext.git src/github.com/kardianos/osext
+          git clone --depth=1 https://github.com/kr/binarydist.git src/github.com/kr/binarydist
+          git clone --depth=1 https://github.com/mattn/go-runewidth.git src/github.com/mattn/go-runewidth
+          git clone --depth=1 https://github.com/nsf/termbox-go.git src/github.com/nsf/termbox-go
+          git clone --depth=1 https://github.com/rcrowley/go-metrics.git src/github.com/rcrowley/go-metrics
 
-          echo "📥 开始克隆 gopkg.in 依赖（使用镜像）..."
+          echo "📥 直接克隆 gopkg.in 依赖的实际仓库"
           git clone --depth=1 https://github.com/inconshreveable/go-update.git src/gopkg.in/inconshreveable/go-update.v0
-          # yaml.v1 的实际仓库在 GitHub
           git clone --depth=1 https://github.com/go-yaml/yaml.git src/gopkg.in/yaml.v1
 
           echo "✅ 所有依赖已强制覆盖克隆完成"

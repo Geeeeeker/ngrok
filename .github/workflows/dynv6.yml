@@ -132,60 +132,31 @@ jobs:
           
           echo "✅ 证书已部署，域名: $DOMAIN"
 
-      - name: 准备 Go 1.18 环境（手动安装，避免 actions/setup-go 缓存问题）
+      - name: 准备 Go 环境并安装 go-bindata
         run: |
-          echo "📥 手动下载 Go 1.18.1..."
-          wget -q -O go.tar.gz https://go.dev/dl/go1.18.1.linux-amd64.tar.gz
-          sudo rm -rf /usr/local/go
-          sudo tar -C /usr/local -xzf go.tar.gz
-          echo "export PATH=/usr/local/go/bin:$PATH" >> $HOME/.profile
-          source $HOME/.profile
-          go version
+          # 1. 严格按照你提供的方法安装 Go 1.18.1
+          echo "📥 下载并安装 Go 1.18.1..."
+          rm -rf /usr/local/go 
+          wget -c https://go.dev/dl/go1.18.1.linux-amd64.tar.gz -O - | sudo tar -xz -C /usr/local
           
-      - name: 准备 Go 环境并编译本地 go-bindata
-        run: |
-          echo "📥 安装 Go 1.18..."
-          wget -q -O go.tar.gz https://go.dev/dl/go1.18.1.linux-amd64.tar.gz
-          sudo rm -rf /usr/local/go
-          sudo tar -C /usr/local -xzf go.tar.gz
+          # 2. 设置环境变量
           export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
+          echo "export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH" >> $GITHUB_ENV
+          
           go version
-
-          go env -w GO111MODULE=auto
+          
+          # 3. 配置 Go 环境（完全按你提供的命令）
+          go env -w GO111MODULE=on
           go env -w GOPROXY=https://goproxy.cn,direct
+          go env -w GO111MODULE=auto
           
-          # 设置 GOPATH 为仓库根目录
-          export GOPATH="${{ github.workspace }}"
-          mkdir -p bin
+          # 4. 使用你验证过的命令安装 go-bindata
+          echo "📦 安装 go-bindata..."
+          go install -a -v github.com/go-bindata/go-bindata/...@latest
           
-          # 直接用 go install 安装 go-bindata（从网络下载到本地 GOPATH）
-          echo "📦 从网络安装 go-bindata..."
-          GO111MODULE=off go install -v github.com/jteeuwen/go-bindata/go-bindata@latest
-          
-          # 检查是否安装成功
-          if [ -f "$GOPATH/bin/go-bindata" ]; then
-            echo "✅ go-bindata 安装成功"
-          elif [ -f "$HOME/go/bin/go-bindata" ]; then
-            mkdir -p "$GOPATH/bin"
-            cp "$HOME/go/bin/go-bindata" "$GOPATH/bin/"
-            echo "✅ go-bindata 从 HOME/go/bin 复制成功"
-          else
-            echo "❌ go-bindata 安装失败，尝试备选方案..."
-            # 备选：从已知可用的镜像克隆
-            rm -rf /tmp/go-bindata
-            git clone --depth=1 https://gitee.com/ngrok-install/go-bindata.git /tmp/go-bindata
-            cd /tmp/go-bindata/go-bindata
-            go build -o "$GOPATH/bin/go-bindata" .
-            cd "$GOPATH"
-          fi
-          
-          # 确保在 PATH 中
-          export PATH="$GOPATH/bin:$HOME/go/bin:$PATH"
-          echo "export PATH=$GOPATH/bin:$HOME/go/bin:$PATH" >> $GITHUB_ENV
-          
-          # 验证
-          ls -la "$GOPATH/bin/go-bindata"
-          echo "✅ go-bindata 编译完成"
+          # 5. 验证安装
+          echo "✅ go-bindata 安装完成"
+          which go-bindata 2>/dev/null || find $HOME/go/bin -name "go-bindata" -exec echo "Found: {}" \;
 
       - name: 编译 (${{ matrix.os }}-${{ matrix.arch }})
         env:

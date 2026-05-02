@@ -58,7 +58,7 @@ jobs:
             --dns dns_dynv6 \
             -d "$DOMAIN" \
             --server letsencrypt \
-            --dnssleep 120 \
+            --dnssleep 20 \
             --force
           mkdir -p ./certs_output
           $HOME/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \

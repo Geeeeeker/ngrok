@@ -41,9 +41,11 @@ jobs:
       - name: 确定域名
         id: set-domain
         run: |
+          # 手动触发时使用选择的 prefix，定时触发默认使用 txddns
           PREFIX="${{ inputs.prefix || 'txddns' }}"
           DOMAIN="${PREFIX}.dynv6.net"
           echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+          echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
           echo "🌐 目标域名: $DOMAIN"
 
       - name: 安装 acme.sh
@@ -54,19 +56,27 @@ jobs:
       - name: 申请证书
         run: |
           DOMAIN="${{ steps.set-domain.outputs.domain }}"
+          
+          echo "🔒 正在为 $DOMAIN 申请证书..."
+          
           $HOME/.acme.sh/acme.sh --issue \
             --dns dns_dynv6 \
             -d "$DOMAIN" \
             --server letsencrypt \
-            --dnssleep 20 \
+            --dnssleep 120 \
             --force
+          
           mkdir -p ./certs_output
+          
           $HOME/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
             --cert-file "./certs_output/device.crt" \
             --key-file "./certs_output/device.key" \
             --ca-file "./certs_output/rootCA.pem" \
             --fullchain-file "./certs_output/fullchain.pem"
+          
           echo "✅ 证书申请成功"
+          echo "证书文件列表:"
+          ls -la ./certs_output/
 
       - name: 上传证书
         uses: actions/upload-artifact@v4
@@ -118,25 +128,40 @@ jobs:
       - name: 处理证书并配置域名
         run: |
           DOMAIN="${{ needs.issue-certs.outputs.cert_domain }}"
+          
+          echo "📄 下载的证书文件:"
+          ls -la ./certs_temp/
+          
+          # 配置域名环境变量
           echo "NGROK_DOMAIN=$DOMAIN" >> $GITHUB_ENV
+          
+          # 替换仓库中的默认证书
           cp -f ./certs_temp/rootCA.pem ./assets/client/tls/ngrokroot.crt
           cp -f ./certs_temp/device.crt ./assets/server/tls/snakeoil.crt
           cp -f ./certs_temp/device.key ./assets/server/tls/snakeoil.key
+          
           echo "✅ 证书已部署，域名: $DOMAIN"
 
       - name: 严格按照你的方法配置 Go 环境
         run: |
+          echo "📥 下载并解压 Go 1.18.1..."
           rm -rf /usr/local/go 
           wget -q -O go.tar.gz https://go.dev/dl/go1.18.1.linux-amd64.tar.gz
           sudo tar -C /usr/local -xzf go.tar.gz
+          
           export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
           echo "export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH" >> $HOME/.profile
           source $HOME/.profile
+          
           go version
+          
           go env -w GO111MODULE=on
           go env -w GOPROXY=https://goproxy.cn,direct
           go env -w GO111MODULE=auto
+          
+          echo "📦 安装 go-bindata..."
           go install -a -v github.com/go-bindata/go-bindata/...@latest
+          
           echo "✅ Go 环境和 go-bindata 准备完成"
 
       - name: 强制覆盖下载所有依赖
@@ -182,11 +207,12 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ matrix.arch }}"
+          DOMAIN="${{ needs.issue-certs.outputs.cert_domain }}"
           PKG_VER="${VERSION#v}"
           DEB_DIR="ngrok_${PKG_VER}_${ARCH}"
           mkdir -p $DEB_DIR/DEBIAN $DEB_DIR/usr/bin $DEB_DIR/usr/share/doc/ngrok
           
-          # 根据平台确定二进制文件路径
+          # 根据架构确定二进制文件路径
           if [ "$ARCH" = "amd64" ]; then
             BIN_DIR="bin"
           else
@@ -196,15 +222,45 @@ jobs:
           cp "$BIN_DIR/ngrok" $DEB_DIR/usr/bin/
           cp "$BIN_DIR/ngrokd" $DEB_DIR/usr/bin/ 2>/dev/null || true
           
+          # 创建使用说明文件
+          cat > $DEB_DIR/usr/share/doc/ngrok/README.txt << EOF
+          ngrok Custom Build
+          ========================
+          Domain    : $DOMAIN
+          Version   : $VERSION
+          Platform  : linux / $ARCH
+          Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          Cert Type : Let's Encrypt (Dynv6 DNS)
+          ========================
+          
+          ## 🚀 启动命令
+          
+          ### 服务端 (ngrokd)
+          ./ngrokd -domain $DOMAIN
+          
+          ### 客户端 (ngrok)
+          ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false -subdomain=git 8081
+          
+          ### 参数说明
+          -domain              服务端域名（已编译内置证书）
+          -server_addr         服务端地址（默认端口4443）
+          -trust_host_root_certs=false  跳过证书验证（已内置自签CA）
+          -subdomain           自定义子域名前缀
+          EOF
+          
           cat > $DEB_DIR/DEBIAN/control << EOF
           Package: ngrok
           Version: $PKG_VER
           Architecture: $ARCH
           Maintainer: CI Bot <ci-bot@github.com>
-          Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }}
+          Description: ngrok custom build for $DOMAIN
+           Custom build with Let's Encrypt SSL certificates.
+           Usage: ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false -subdomain=git 8081
           EOF
           dpkg-deb --build $DEB_DIR
-          echo "deb_file=$(basename $DEB_DIR).deb" >> $GITHUB_OUTPUT
+          DEB_FILE="ngrok_${PKG_VER}_${ARCH}.deb"
+          mv $DEB_DIR.deb $DEB_FILE
+          echo "✅ 生成: $DEB_FILE"
 
       - name: 打包 zip
         if: matrix.os != 'linux'
@@ -212,51 +268,51 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           OS="${{ matrix.os }}"
           ARCH="${{ matrix.arch }}"
+          DOMAIN="${{ needs.issue-certs.outputs.cert_domain }}"
           PKG_DIR="ngrok-${OS}-${ARCH}"
           mkdir -p $PKG_DIR
           
-          # ---------- 核心修复：统一从正确路径复制 ----------
-          # Linux 产物在 bin/ 根目录，其他平台在 bin/${GOOS}_${GOARCH}/ 子目录
-          if [ "$OS" = "linux" ]; then
-            SRC_DIR="bin"
-          else
-            SRC_DIR="bin/${OS}_${ARCH}"
-          fi
-          echo "📂 二进制文件源目录: $SRC_DIR"
+          BIN_DIR="bin/${OS}_${ARCH}"
           
-          # 列出源目录里的文件，方便调试
-          echo "源目录内容:"
-          ls -la "$SRC_DIR/" 2>/dev/null || echo "⚠️ 目录不存在"
-          
-          # 复制所有可执行文件（ngrok, ngrokd, 以及可能的其他文件）
-          if [ -d "$SRC_DIR" ]; then
-            cp "$SRC_DIR"/* "$PKG_DIR/" 2>/dev/null || true
+          if [ -f "$BIN_DIR/ngrok" ]; then
+            cp "$BIN_DIR/ngrok" $PKG_DIR/
           fi
           
-          # 列出复制后的文件
-          echo "打包目录内容:"
-          ls -la "$PKG_DIR/"
-          
-          # Windows 添加 .exe 后缀（自动处理所有无后缀的文件）
-          if [ "$OS" = "windows" ]; then
-            for f in "$PKG_DIR"/*; do
-              if [ -f "$f" ] && [[ "$f" != *.exe ]] && [[ "$f" != *.txt ]]; then
-                mv "$f" "${f}.exe"
-                echo "  → 重命名: $(basename "$f") → $(basename "${f}.exe")"
-              fi
-            done
+          if [ "$OS" = "windows" ] && [ -f $PKG_DIR/ngrok ]; then
+            mv $PKG_DIR/ngrok $PKG_DIR/ngrok.exe
           fi
           
-          # 添加说明文件
+          # 创建使用说明文件（不包含 ngrok.cfg，因为一条命令即可）
           cat > $PKG_DIR/README.txt << EOF
           ngrok Custom Build
-          Domain: ${{ needs.issue-certs.outputs.cert_domain }}
-          Version: $VERSION
-          Platform: $OS / $ARCH
+          ========================
+          Domain    : $DOMAIN
+          Version   : $VERSION
+          Platform  : $OS / $ARCH
+          Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          Cert Type : Let's Encrypt (Dynv6 DNS)
+          ========================
+          
+          ## 🚀 启动命令（无需配置文件）
+          
+          ### 客户端 (ngrok)
+          ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false -subdomain=git 8081
+          
+          ### 参数说明
+          -server_addr              服务端地址（默认端口4443）
+          -trust_host_root_certs=false  跳过证书验证（已内置自签CA）
+          -subdomain                自定义子域名前缀
+          
+          ### 简化版（使用默认值）
+          ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false 8080
+          
+          ### 更多用法
+          ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false -subdomain=web 3000
+          ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false -proto=tcp 22
           EOF
           
           ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
-          zip -r "$ZIP_FILE" "$PKG_DIR"
+          zip -r "$ZIP_FILE" $PKG_DIR
           echo "✅ 生成: $ZIP_FILE"
 
       - name: 上传构件
@@ -296,13 +352,37 @@ jobs:
           name: ngrok ${{ needs.issue-certs.outputs.cert_domain }} - ${{ steps.version.outputs.version }}
           body: |
             ## 🚀 ngrok v1 自定义编译版本
-            **域名**: ${{ needs.issue-certs.outputs.cert_domain }}
-            **证书**: Let's Encrypt (Dynv6 DNS 验证)
-            **构建时间**: $(date -u +'%Y.%m.%d-%H%M%S UTC')
-            ### 使用说明
-            - Linux deb 包包含客户端和服务端
-            - macOS/Windows zip 包包含客户端和服务端（如有编译）
-            - 证书已内置，启动客户端：`ngrok -hostname="${{ needs.issue-certs.outputs.cert_domain }}" 8080`
+            
+            **🌐 域名**: `${{ needs.issue-certs.outputs.cert_domain }}`
+            **📅 构建时间**: $(date -u +'%Y.%m.%d-%H:%M:%S UTC')
+            **🔒 证书类型**: Let's Encrypt (Dynv6 DNS 验证)
+            **⏰ 证书有效期**: 90 天（自动续期 80 天/次）
+            
+            ### 📦 包含的文件
+            
+            #### 🐧 Linux (deb 包)
+            - `ngrok_*_amd64.deb` - x86_64 架构（客户端 + 服务端）
+            - `ngrok_*_arm64.deb` - ARM64 架构（客户端 + 服务端）
+            
+            #### 🍎 macOS (zip 包)
+            - `ngrok_*_darwin_amd64.zip` - Intel 处理器（仅客户端）
+            
+            #### 🪟 Windows (zip 包)
+            - `ngrok_*_windows_amd64.zip` - x86_64 架构（仅客户端）
+            - `ngrok_*_windows_arm64.zip` - ARM64 架构（仅客户端）
+            
+            ### 🚀 启动命令（无需配置文件，一条命令即可）
+            # 转发本地 8080 端口到 web.domain.com
+            ./ngrok -server_addr="${{ needs.issue-certs.outputs.cert_domain }}:4443" -trust_host_root_certs=false -subdomain=web 8080
+            
+            # 转发 TCP 流量（如 SSH）
+            ./ngrok -server_addr="${{ needs.issue-certs.outputs.cert_domain }}:4443" -trust_host_root_certs=false -proto=tcp 22
+            
+            # Windows 系统
+            ngrok.exe -server_addr="${{ needs.issue-certs.outputs.cert_domain }}:4443" -trust_host_root_certs=false -subdomain=git 8081
+            #### 服务端
+            ```bash
+            ./ngrokd -domain ${{ needs.issue-certs.outputs.cert_domain }}
           files: ./release-files/*
           draft: false
           prerelease: false

@@ -206,9 +206,10 @@ jobs:
           Maintainer: CI Bot <ci-bot@github.com>
           Description: ngrok custom build for ${{ needs.issue-certs.outputs.cert_domain }}
           EOF
+          # 直接构建即可，构建目录名 DEB_DIR 的值就是最终的包名
           dpkg-deb --build $DEB_DIR
-          DEB_FILE="ngrok_${PKG_VER}_${ARCH}.deb"
-          echo "✅ 生成: $DEB_FILE"
+          # 设置变量，方便后续步骤引用。变量名 DEB_FILE 的值去掉路径，只保留文件名。
+          echo "deb_file=$(basename $DEB_DIR).deb" >> $GITHUB_OUTPUT
 
       - name: 打包 zip
         if: matrix.os != 'linux'

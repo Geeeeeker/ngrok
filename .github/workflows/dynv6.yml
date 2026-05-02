@@ -215,38 +215,48 @@ jobs:
           PKG_DIR="ngrok-${OS}-${ARCH}"
           mkdir -p $PKG_DIR
           
-          # 确定二进制文件路径
-          BIN_DIR="bin/${OS}_${ARCH}"
+          # ---------- 核心修复：统一从正确路径复制 ----------
+          # Linux 产物在 bin/ 根目录，其他平台在 bin/${GOOS}_${GOARCH}/ 子目录
+          if [ "$OS" = "linux" ]; then
+            SRC_DIR="bin"
+          else
+            SRC_DIR="bin/${OS}_${ARCH}"
+          fi
+          echo "📂 二进制文件源目录: $SRC_DIR"
           
-          # 复制客户端
-          if [ -f "$BIN_DIR/ngrok" ]; then
-            cp "$BIN_DIR/ngrok" $PKG_DIR/
+          # 列出源目录里的文件，方便调试
+          echo "源目录内容:"
+          ls -la "$SRC_DIR/" 2>/dev/null || echo "⚠️ 目录不存在"
+          
+          # 复制所有可执行文件（ngrok, ngrokd, 以及可能的其他文件）
+          if [ -d "$SRC_DIR" ]; then
+            cp "$SRC_DIR"/* "$PKG_DIR/" 2>/dev/null || true
           fi
           
-          # 复制服务端（如果有）
-          if [ -f "$BIN_DIR/ngrokd" ]; then
-            cp "$BIN_DIR/ngrokd" $PKG_DIR/
-          fi
+          # 列出复制后的文件
+          echo "打包目录内容:"
+          ls -la "$PKG_DIR/"
           
-          # Windows 添加 .exe 后缀
+          # Windows 添加 .exe 后缀（自动处理所有无后缀的文件）
           if [ "$OS" = "windows" ]; then
             for f in "$PKG_DIR"/*; do
-              base=$(basename "$f")
-              ext="${base##*.}"
-              if [ "$ext" != "exe" ]; then
+              if [ -f "$f" ] && [[ "$f" != *.exe ]] && [[ "$f" != *.txt ]]; then
                 mv "$f" "${f}.exe"
+                echo "  → 重命名: $(basename "$f") → $(basename "${f}.exe")"
               fi
             done
           fi
           
+          # 添加说明文件
           cat > $PKG_DIR/README.txt << EOF
           ngrok Custom Build
           Domain: ${{ needs.issue-certs.outputs.cert_domain }}
           Version: $VERSION
           Platform: $OS / $ARCH
           EOF
+          
           ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
-          zip -r "$ZIP_FILE" $PKG_DIR
+          zip -r "$ZIP_FILE" "$PKG_DIR"
           echo "✅ 生成: $ZIP_FILE"
 
       - name: 上传构件

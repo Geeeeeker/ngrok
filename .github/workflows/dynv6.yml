@@ -258,9 +258,7 @@ jobs:
            Usage: ./ngrok -server_addr="${DOMAIN}:4443" -trust_host_root_certs=false -subdomain=git 8081
           EOF
           dpkg-deb --build $DEB_DIR
-          DEB_FILE="ngrok_${PKG_VER}_${ARCH}.deb"
-          mv $DEB_DIR.deb $DEB_FILE
-          echo "✅ 生成: $DEB_FILE"
+          echo "deb_file=$(basename $DEB_DIR).deb" >> $GITHUB_OUTPUT
 
       - name: 打包 zip
         if: matrix.os != 'linux'

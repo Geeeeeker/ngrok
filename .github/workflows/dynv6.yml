@@ -113,52 +113,65 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ssl-certificates
-          path: ./certs
+          path: ./certs_temp
 
-      - name: 替换证书并配置域名
+      # 严格按照你提供的 txddns.sh 脚本逻辑处理证书
+      - name: 处理证书并配置域名
         run: |
+          cd ./certs_temp
+          # 删除旧的命名
+          rm -f device.crt device.key rootCA.pem
+          # 重命名为 ngrok 需要的文件名
+          mv *.crt device.crt
+          mv *.key device.key
+          mv *.pem rootCA.pem
+          cd ..
+          
+          # 配置域名（重要：编译时会用到）
           DOMAIN="${{ needs.issue-certs.outputs.cert_domain }}"
-          rm -f assets/client/tls/ngrokroot.crt
-          rm -f assets/server/tls/snakeoil.crt
-          rm -f assets/server/tls/snakeoil.key
-          cp ./certs/device.crt assets/server/tls/snakeoil.crt
-          cp ./certs/device.key assets/server/tls/snakeoil.key
-          cp ./certs/rootCA.pem assets/client/tls/ngrokroot.crt
           echo "NGROK_DOMAIN=$DOMAIN" >> $GITHUB_ENV
-          echo "✅ 证书已替换，域名: $DOMAIN"
+          
+          # 替换仓库中的默认证书
+          cp -f ./certs_temp/rootCA.pem ./assets/client/tls/ngrokroot.crt
+          cp -f ./certs_temp/device.crt ./assets/server/tls/snakeoil.crt
+          cp -f ./certs_temp/device.key ./assets/server/tls/snakeoil.key
+          
+          echo "✅ 证书已处理，域名: $DOMAIN"
 
-      - name: 设置 Go 1.18
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.18'
+      - name: 准备 Go 1.18 环境（手动安装，避免 actions/setup-go 缓存问题）
+        run: |
+          echo "📥 手动下载 Go 1.18.1..."
+          wget -q -O go.tar.gz https://go.dev/dl/go1.18.1.linux-amd64.tar.gz
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf go.tar.gz
+          echo "export PATH=/usr/local/go/bin:$PATH" >> $HOME/.profile
+          source $HOME/.profile
+          go version
 
-      - name: 配置 Go 环境
+      - name: 配置 Go 环境变量
         run: |
           go env -w GO111MODULE=auto
           go env -w GOPROXY=https://goproxy.cn,direct
-          # 安装 go-bindata (适配 1.18 的语法)
-          go install github.com/go-bindata/go-bindata/...@latest
-          # 将 GOPATH/bin 加入 PATH
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          # 将自带的依赖目录加入到 GOPATH 搜索路径
+          go env -w GOFLAGS="-mod=mod"
+          
+          # 关键修复：编译本地自带的 go-bindata
+          echo "📦 编译本地 go-bindata..."
+          export GOPATH="${{ github.workspace }}"
+          cd src/github.com/jteeuwen/go-bindata/go-bindata
+          go build -o ${{ github.workspace }}/bin/go-bindata
+          cd ${{ github.workspace }}
+          echo "✅ go-bindata 编译完成"
 
       - name: 编译 (${{ matrix.os }}-${{ matrix.arch }})
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          echo "🔨 编译 $GOOS/$GOARCH ..."
-
-          # 设置 GOPATH 为仓库根目录（因为依赖在 src/ 下）
-          export GOPATH="${{ github.workspace }}"
-          export PATH="$GOPATH/bin:$PATH"
-
-          # 关键的修复：
-          # 1. 不使用 make，绕过 Makefile 中错误的 'go get' 指令
-          # 2. 直接在本地编译已自带的 go-bindata
-          echo "📦 编译本地 go-bindata..."
-          go build -o bin/go-bindata github.com/jteeuwen/go-bindata/go-bindata
-
-          # 3. 现在可以安全地运行 make 了（make 会检测 bin/go-bindata 已存在）
+          echo "🔨 开始编译 $GOOS/$GOARCH ..."
+          export PATH=${{ github.workspace }}/bin:$PATH
+          
+          # 现在可以安全地使用 make 了
           if [ "${{ matrix.package_type }}" = "deb" ]; then
             make release-server
             make release-client

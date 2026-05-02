@@ -159,8 +159,9 @@ jobs:
           git clone --depth=1 https://gitee.com/mirrors/go-metrics.git src/github.com/rcrowley/go-metrics
 
           echo "📥 开始克隆 gopkg.in 依赖（使用镜像）..."
-          git clone --depth=1 https://gitee.com/ngrok-install/go-update.git src/gopkg.in/inconshreveable/go-update.v0
-          git clone --depth=1 https://gitee.com/ngrok-install/yaml.v1.git src/gopkg.in/yaml.v1
+          git clone --depth=1 https://github.com/inconshreveable/go-update.git src/gopkg.in/inconshreveable/go-update.v0
+          # yaml.v1 的实际仓库在 GitHub
+          git clone --depth=1 https://github.com/go-yaml/yaml.git src/gopkg.in/yaml.v1
 
           echo "✅ 所有依赖已强制覆盖克隆完成"
 

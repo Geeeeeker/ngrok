@@ -164,15 +164,26 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           echo "🔨 开始编译 $GOOS/$GOARCH ..."
-          export PATH=${{ github.workspace }}/bin:$PATH
           
-          # 现在可以安全地使用 make 了
+          # 关键修复：绕过 Makefile 中的 'go get' 错误
+          # 1. 确保我们安装的 go-bindata 在 PATH 中
+          export PATH=$HOME/go/bin:$PATH
+          
+          # 2. 直接在仓库里创建一个假的 bin/go-bindata，骗过 Makefile 的依赖检查
+          #    Makefile 检查 bin/go-bindata 是否存在，如果存在就跳过下载
+          mkdir -p bin
+          cp $(which go-bindata) bin/go-bindata
+          chmod +x bin/go-bindata
+          echo "✅ go-bindata 已就位，Makefile 将跳过下载"
+          
+          # 3. 现在可以安全地运行 make 了
           if [ "${{ matrix.package_type }}" = "deb" ]; then
             make release-server
             make release-client
           else
             make release-client
           fi
+          
           echo "编译产物:"
           ls -la bin/
 

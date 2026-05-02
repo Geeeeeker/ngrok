@@ -186,8 +186,19 @@ jobs:
           PKG_VER="${VERSION#v}"
           DEB_DIR="ngrok_${PKG_VER}_${ARCH}"
           mkdir -p $DEB_DIR/DEBIAN $DEB_DIR/usr/bin $DEB_DIR/usr/share/doc/ngrok
-          cp bin/ngrok $DEB_DIR/usr/bin/
-          cp bin/ngrokd $DEB_DIR/usr/bin/ 2>/dev/null || true
+          
+          # 根据平台确定二进制文件路径
+          if [ "$ARCH" = "amd64" ]; then
+            # Linux amd64 特殊：直接在 bin/ 下
+            BIN_DIR="bin"
+          else
+            # 其他架构：在 bin/linux_arm64/ 等子目录
+            BIN_DIR="bin/linux_${ARCH}"
+          fi
+          
+          cp "$BIN_DIR/ngrok" $DEB_DIR/usr/bin/
+          cp "$BIN_DIR/ngrokd" $DEB_DIR/usr/bin/ 2>/dev/null || true
+          
           cat > $DEB_DIR/DEBIAN/control << EOF
           Package: ngrok
           Version: $PKG_VER
@@ -199,6 +210,36 @@ jobs:
           DEB_FILE="ngrok_${PKG_VER}_${ARCH}.deb"
           mv $DEB_DIR.deb $DEB_FILE
           echo "✅ 生成: $DEB_FILE"
+
+      - name: 打包 zip
+        if: matrix.os != 'linux'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OS="${{ matrix.os }}"
+          ARCH="${{ matrix.arch }}"
+          PKG_DIR="ngrok-${OS}-${ARCH}"
+          mkdir -p $PKG_DIR
+          
+          # 确定二进制文件路径
+          BIN_DIR="bin/${OS}_${ARCH}"
+          
+          if [ -f "$BIN_DIR/ngrok" ]; then
+            cp "$BIN_DIR/ngrok" $PKG_DIR/
+          fi
+          
+          if [ "$OS" = "windows" ] && [ -f $PKG_DIR/ngrok ]; then
+            mv $PKG_DIR/ngrok $PKG_DIR/ngrok.exe
+          fi
+          
+          cat > $PKG_DIR/README.txt << EOF
+          ngrok Custom Build
+          Domain: ${{ needs.issue-certs.outputs.cert_domain }}
+          Version: $VERSION
+          Platform: $OS / $ARCH
+          EOF
+          ZIP_FILE="ngrok_${VERSION}_${OS}_${ARCH}.zip"
+          zip -r "$ZIP_FILE" $PKG_DIR
+          echo "✅ 生成: $ZIP_FILE"
 
       - name: 打包 zip
         if: matrix.os != 'linux'

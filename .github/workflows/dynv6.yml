@@ -156,7 +156,6 @@ jobs:
           
           echo "✅ Go 环境和 go-bindata 准备完成"
 
-      # ---------- 编译：完全模拟你的 txddns.sh ----------
       - name: 编译 (${{ matrix.os }}-${{ matrix.arch }})
         env:
           GOOS: ${{ matrix.goos }}
@@ -164,10 +163,16 @@ jobs:
         run: |
           echo "🔨 编译 $GOOS/$GOARCH ..."
           
-          # 确保 PATH 万无一失
+          # 确保 Go 和 go-bindata 的路径可用
           export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
           
-          # 严格按你的脚本逻辑来，直接 make
+          # --- 核心修复：彻底移除有问题的本地残留目录 ---
+          # 这确保了 make 不会因为空目录而报错，转而去用我们正确安装的 go-bindata
+          echo "🧹 清理可能冲突的本地 go-bindata 目录..."
+          rm -rf src/github.com/jteeuwen/go-bindata
+          echo "✅ 清理完成"
+          
+          # 现在，严格按照你的 txddns.sh 逻辑，直接运行 make
           make release-server
           make release-client
           

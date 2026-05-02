@@ -202,7 +202,6 @@ jobs:
           else
             echo "src_dir=bin/${{ matrix.goos }}_${{ matrix.goarch }}" >> $GITHUB_OUTPUT
           fi
-          echo "📂 二进制文件源目录: ${{ steps.bin-src.outputs.src_dir }}"
 
       - name: 打包 deb
         if: matrix.os == 'linux'

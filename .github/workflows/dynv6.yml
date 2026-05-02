@@ -142,20 +142,48 @@ jobs:
           source $HOME/.profile
           go version
 
-      - name: 配置 Go 环境变量
+      - name: 调试 - 查看 src 结构
         run: |
+          echo "===== src 顶层目录 ====="
+          ls -la src/
+          echo ""
+          echo "===== github.com 相关 ====="
+          ls -la src/github.com/ 2>/dev/null || echo "没有 src/github.com"
+          echo ""
+          echo "===== jteeuwen 相关 ====="
+          find src -name "*jteeuwen*" -o -name "*go-bindata*" 2>/dev/null
+          
+      - name: 准备 Go 环境并编译本地 go-bindata
+        run: |
+          echo "📥 安装 Go 1.18..."
+          wget -q -O go.tar.gz https://go.dev/dl/go1.18.1.linux-amd64.tar.gz
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf go.tar.gz
+          echo "export PATH=/usr/local/go/bin:$PATH" >> $HOME/.profile
+          source $HOME/.profile
+          go version
+
           go env -w GO111MODULE=auto
           go env -w GOPROXY=https://goproxy.cn,direct
-          # 将自带的依赖目录加入到 GOPATH 搜索路径
-          go env -w GOFLAGS="-mod=mod"
           
-          # 关键修复：编译本地自带的 go-bindata
-          echo "📦 编译本地 go-bindata..."
+          # 先查看 src 下的实际结构
+          echo "📂 src 目录结构:"
+          find src -maxdepth 4 -type d
+          
+          # 设置 GOPATH 为仓库根目录，这样 Go 能自动识别 src 下的包
           export GOPATH="${{ github.workspace }}"
-          cd src/github.com/jteeuwen/go-bindata/go-bindata
-          go build -o ${{ github.workspace }}/bin/go-bindata
-          cd ${{ github.workspace }}
-          echo "✅ go-bindata 编译完成"
+          mkdir -p bin
+          
+          # 尝试编译 go-bindata（Go 会在 GOPATH/src 下自动查找）
+          echo "📦 编译 go-bindata..."
+          cd "$GOPATH"
+          go build -o bin/go-bindata github.com/jteeuwen/go-bindata/go-bindata || {
+            echo "⚠️ 完整路径失败，尝试短路径..."
+            cd "$GOPATH"
+            go build -o bin/go-bindata go-bindata/go-bindata
+          }
+          
+          echo "✅ go-bindata 路径: $(which go-bindata 2>/dev/null || echo $GOPATH/bin/go-bindata)"
 
       - name: 编译 (${{ matrix.os }}-${{ matrix.arch }})
         env:

@@ -154,34 +154,37 @@ jobs:
           go env -w GO111MODULE=auto
           go env -w GOPROXY=https://goproxy.cn,direct
           
-          # 检查 go-bindata 的实际内容
-          echo "📂 go-bindata 目录内容:"
-          ls -la src/github.com/jteeuwen/go-bindata/
-          ls -la src/github.com/jteeuwen/go-bindata/go-bindata/ 2>/dev/null || echo "go-bindata 子目录不存在或为空"
-          
-          # 如果 go-bindata 源码不在预期位置，检查是否需要解压 github.com.zip
-          if [ ! -f "src/github.com/jteeuwen/go-bindata/go-bindata/main.go" ]; then
-            echo "📦 解压 github.com.zip ..."
-            unzip -o github.com.zip -d /tmp/github_deps
-            # 复制缺失的 go-bindata 源码
-            if [ -d "/tmp/github_deps/jteeuwen/go-bindata" ]; then
-              cp -r /tmp/github_deps/jteeuwen/go-bindata src/github.com/jteeuwen/
-              echo "✅ go-bindata 源码已补充"
-            fi
-          fi
-          
-          # 设置正确的 GOPATH
+          # 设置 GOPATH 为仓库根目录
           export GOPATH="${{ github.workspace }}"
           mkdir -p bin
           
-          # 进入 go-bindata 目录编译
-          echo "📦 编译 go-bindata..."
-          cd src/github.com/jteeuwen/go-bindata/go-bindata
-          go build -o ${{ github.workspace }}/bin/go-bindata .
-          cd ${{ github.workspace }}
+          # 直接用 go install 安装 go-bindata（从网络下载到本地 GOPATH）
+          echo "📦 从网络安装 go-bindata..."
+          GO111MODULE=off go install -v github.com/jteeuwen/go-bindata/go-bindata@latest
+          
+          # 检查是否安装成功
+          if [ -f "$GOPATH/bin/go-bindata" ]; then
+            echo "✅ go-bindata 安装成功"
+          elif [ -f "$HOME/go/bin/go-bindata" ]; then
+            mkdir -p "$GOPATH/bin"
+            cp "$HOME/go/bin/go-bindata" "$GOPATH/bin/"
+            echo "✅ go-bindata 从 HOME/go/bin 复制成功"
+          else
+            echo "❌ go-bindata 安装失败，尝试备选方案..."
+            # 备选：从已知可用的镜像克隆
+            rm -rf /tmp/go-bindata
+            git clone --depth=1 https://gitee.com/ngrok-install/go-bindata.git /tmp/go-bindata
+            cd /tmp/go-bindata/go-bindata
+            go build -o "$GOPATH/bin/go-bindata" .
+            cd "$GOPATH"
+          fi
+          
+          # 确保在 PATH 中
+          export PATH="$GOPATH/bin:$HOME/go/bin:$PATH"
+          echo "export PATH=$GOPATH/bin:$HOME/go/bin:$PATH" >> $GITHUB_ENV
           
           # 验证
-          ls -la bin/go-bindata
+          ls -la "$GOPATH/bin/go-bindata"
           echo "✅ go-bindata 编译完成"
 
       - name: 编译 (${{ matrix.os }}-${{ matrix.arch }})

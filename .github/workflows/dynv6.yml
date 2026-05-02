@@ -166,10 +166,10 @@ jobs:
           # 确保 Go 和 go-bindata 的路径可用
           export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
           
-          # --- 核心修复：彻底移除有问题的本地残留目录 ---
-          # 这确保了 make 不会因为空目录而报错，转而去用我们正确安装的 go-bindata
-          echo "🧹 清理可能冲突的本地 go-bindata 目录..."
-          rm -rf src/github.com/jteeuwen/go-bindata
+          # --- 一劳永逸的清理：移除所有不带 .git 的残留依赖目录 ---
+          # 这会清除所有可能导致 "stale checkout" 错误的目录
+          echo "🧹 清理所有不完整的本地依赖目录..."
+          find src -maxdepth 3 -type d -exec sh -c 'if [ ! -d "$1/.git" ]; then echo "清理残留: $1"; rm -rf "$1"; fi' _ {} \;
           echo "✅ 清理完成"
           
           # 现在，严格按照你的 txddns.sh 逻辑，直接运行 make

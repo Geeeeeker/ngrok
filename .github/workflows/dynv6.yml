@@ -1,4 +1,4 @@
-name: Build ngrok for txddns & shanwei
+name: Build ngrok for ngrok.dynv6.net
 
 on:
   workflow_dispatch:
@@ -11,34 +11,25 @@ permissions:
 
 env:
   DYNV6_TOKEN: ${{ secrets.DYNV6_TOKEN }}
+  DOMAIN: ngrok.dynv6.net
 
 jobs:
-  # ========== 并行申请两个域名的证书 ==========
+  # ========== 申请证书 ==========
   issue-certs:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        prefix: [txddns, shanwei]
     steps:
       - name: 检查 Token
         run: |
           if [ -z "$DYNV6_TOKEN" ]; then
-            echo "❌ 错误：未配置 DYNV6_TOKEN"
+            echo "❌ 未配置 DYNV6_TOKEN"
             exit 1
           fi
-      - name: 确定域名
-        id: set-domain
-        run: |
-          DOMAIN="${{ matrix.prefix }}.dynv6.net"
-          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
-          echo "🌐 $DOMAIN"
       - name: 安装 acme.sh
         run: |
           curl https://get.acme.sh | sh -s email=ci-bot@github.com
           echo "$HOME/.acme.sh" >> $GITHUB_PATH
       - name: 申请 & 安装证书
         run: |
-          DOMAIN="${{ steps.set-domain.outputs.domain }}"
           $HOME/.acme.sh/acme.sh --issue --dns dns_dynv6 -d "$DOMAIN" \
             --server letsencrypt --dnssleep 20 --force
           mkdir -p certs_output
@@ -47,95 +38,61 @@ jobs:
             --key-file certs_output/device.key \
             --ca-file certs_output/rootCA.pem \
             --fullchain-file certs_output/fullchain.pem
-          echo "✅ 证书完成"
-      - name: 上传证书（按前缀）
+          echo "✅ 证书申请成功"
+      - name: 上传证书
         uses: actions/upload-artifact@v4
         with:
-          name: ssl-certs-${{ matrix.prefix }}
+          name: ssl-certs
           path: certs_output/
           retention-days: 1
 
-  # ========== 全平台编译（手动列出所有 2×5=10 种组合） ==========
+  # ========== 全平台编译 ==========
   build:
     needs: issue-certs
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          # txddns 域名
-          - domain_prefix: txddns
-            os: linux
+          - os: linux
             arch: amd64
             goarch: amd64
             goos: linux
-          - domain_prefix: txddns
-            os: linux
+          - os: linux
             arch: arm64
             goarch: arm64
             goos: linux
-          - domain_prefix: txddns
-            os: darwin
+          - os: darwin
             arch: amd64
             goarch: amd64
             goos: darwin
-          - domain_prefix: txddns
-            os: windows
+          - os: windows
             arch: amd64
             goarch: amd64
             goos: windows
-          - domain_prefix: txddns
-            os: windows
+          - os: windows
             arch: arm64
             goarch: arm64
             goos: windows
-          # shanwei 域名
-          - domain_prefix: shanwei
-            os: linux
-            arch: amd64
-            goarch: amd64
-            goos: linux
-          - domain_prefix: shanwei
-            os: linux
-            arch: arm64
-            goarch: arm64
-            goos: linux
-          - domain_prefix: shanwei
-            os: darwin
-            arch: amd64
-            goarch: amd64
-            goos: darwin
-          - domain_prefix: shanwei
-            os: windows
-            arch: amd64
-            goarch: amd64
-            goos: windows
-          - domain_prefix: shanwei
-            os: windows
-            arch: arm64
-            goarch: arm64
-            goos: windows
-
     steps:
-      - name: 检出 ngrok 源码
+      - name: 检出源码
         uses: actions/checkout@v4
         with:
           repository: Geeeeeker/ngrok
           fetch-depth: 0
 
-      - name: 下载对应域名证书
+      - name: 下载证书
         uses: actions/download-artifact@v4
         with:
-          name: ssl-certs-${{ matrix.domain_prefix }}
+          name: ssl-certs
           path: ./certs_temp
 
-      - name: 注入证书和域名环境变量
+      - name: 替换证书并写入域名
         run: |
-          DOMAIN="${{ matrix.domain_prefix }}.dynv6.net"
-          echo "NGROK_DOMAIN=$DOMAIN" >> $GITHUB_ENV
           cp -f certs_temp/rootCA.pem assets/client/tls/ngrokroot.crt
           cp -f certs_temp/device.crt assets/server/tls/snakeoil.crt
           cp -f certs_temp/device.key assets/server/tls/snakeoil.key
-          echo "✅ 域名: $DOMAIN"
+          echo "NGROK_DOMAIN=$DOMAIN" >> $GITHUB_ENV
+          echo "✅ 证书已注入，域名: $DOMAIN"
 
       - name: 配置 Go 1.18
         run: |
@@ -184,10 +141,8 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          PREFIX="${{ matrix.domain_prefix }}"
-          DOMAIN="${PREFIX}.dynv6.net"
           PKG_VER="${VERSION#v}"
-          DEB_DIR="ngrok-${PREFIX}-${PKG_VER}-${ARCH}"
+          DEB_DIR="ngrok-${PKG_VER}-${ARCH}"
           mkdir -p $DEB_DIR/DEBIAN $DEB_DIR/usr/bin $DEB_DIR/usr/share/doc/ngrok
 
           [ "$ARCH" = "amd64" ] && BIN_DIR="bin" || BIN_DIR="bin/linux_${ARCH}"
@@ -196,14 +151,14 @@ jobs:
 
           cat > $DEB_DIR/usr/share/doc/ngrok/README.md << EOF
           # ngrok for ${DOMAIN}
-          ## 启动（无需配置文件）
+          ## 启动命令（无需配置文件）
           服务端: ./ngrokd -domain=${DOMAIN}
           客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
           版本: ${VERSION} | 证书: Let's Encrypt
           EOF
 
           cat > $DEB_DIR/DEBIAN/control << EOF
-          Package: ngrok-${PREFIX}
+          Package: ngrok
           Version: $PKG_VER
           Architecture: $ARCH
           Maintainer: CI Bot
@@ -219,9 +174,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           OS="${{ matrix.os }}"
           ARCH="${{ matrix.arch }}"
-          PREFIX="${{ matrix.domain_prefix }}"
-          DOMAIN="${PREFIX}.dynv6.net"
-          PKG_DIR="ngrok-${PREFIX}-${OS}-${ARCH}"
+          PKG_DIR="ngrok-${OS}-${ARCH}"
           mkdir -p $PKG_DIR
 
           SRC_DIR="bin/${OS}_${ARCH}"
@@ -235,31 +188,31 @@ jobs:
 
           cat > $PKG_DIR/README.md << EOF
           # ngrok for ${DOMAIN}
-          ## 启动
+          ## 启动命令
           服务端: ./ngrokd -domain=${DOMAIN}
           客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
           版本: ${VERSION} | 证书: Let's Encrypt
           EOF
 
-          ZIP_FILE="ngrok-${PREFIX}-${VERSION}-${OS}-${ARCH}.zip"
+          ZIP_FILE="ngrok-${VERSION}-${OS}-${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"
           echo "✅ 生成 $ZIP_FILE"
 
-      - name: 上传构件（每个平台单独命名）
+      - name: 上传构件
         uses: actions/upload-artifact@v4
         with:
-          name: ngrok-${{ matrix.domain_prefix }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: ngrok-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             *.deb
             *.zip
           retention-days: 1
 
-  # ========== 汇总发布（含 sha256 校验文件） ==========
+  # ========== 创建 Release（含 SHA256 校验） ==========
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: 获取版本时间
+      - name: 取版本时间
         id: version
         run: echo "version=v$(date +'%Y.%m.%d-%H%M%S')" >> $GITHUB_OUTPUT
 
@@ -268,19 +221,10 @@ jobs:
         with:
           path: artifacts
 
-      - name: 调试 - 查看下载的目录结构
-        run: |
-          echo "=== 所有 artifacts 目录结构 ==="
-          find artifacts -type f
-          echo "=== 查找 deb 和 zip 文件 ==="
-          find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) || echo "未找到任何 deb/zip 文件！"
-
-      - name: 收集所有安装包
+      - name: 收集文件
         run: |
           mkdir -p release-files
-          # 从 artifacts 下任何子目录收集 deb 和 zip 文件
           find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) -exec cp -v {} release-files/ \;
-          echo "📦 收集到的文件数量: $(ls -1 release-files/ | wc -l)"
           ls -lh release-files/
 
       - name: 生成 SHA256 校验文件
@@ -289,20 +233,19 @@ jobs:
           sha256sum * > checksums.txt
           cat checksums.txt
 
-      - name: 创建 Release 并上传所有文件
+      - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: ngrok txddns & shanwei - ${{ steps.version.outputs.version }}
+          name: ngrok for ngrok.dynv6.net - ${{ steps.version.outputs.version }}
           body: |
-            ## 🚀 ngrok 双域名 · 全平台
+            ## 🚀 ngrok for ngrok.dynv6.net
 
-            **域名**: `txddns.dynv6.net` · `shanwei.dynv6.net`
+            **域名**: `ngrok.dynv6.net`
             **证书**: Let's Encrypt (已内置) · 每 80 天自动续期
 
             ### 一条命令启动（无需配置文件）
 
             #### 服务端
             ```bash
-            ./ngrokd -domain=txddns.dynv6.net
-            ./ngrokd -domain=shanwei.dynv6.net
+            ./ngrokd -domain=ngrok.dynv6.net

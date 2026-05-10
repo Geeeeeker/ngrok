@@ -14,7 +14,7 @@ env:
   DOMAIN: ngrok.dynv6.net
 
 jobs:
-  # ========== 申请通配符证书 ==========
+  # ========== 分步申请证书（绕过通配符合并写入问题） ==========
   issue-certs:
     runs-on: ubuntu-latest
     steps:
@@ -30,24 +30,41 @@ jobs:
           curl https://get.acme.sh | sh -s email=ci-bot@github.com
           echo "$HOME/.acme.sh" >> $GITHUB_PATH
 
-      - name: 申请通配符证书
+      - name: 第一步：申请根域名证书
         run: |
           $HOME/.acme.sh/acme.sh --issue --dns dns_dynv6 \
             -d "$DOMAIN" \
+            --server letsencrypt --dnssleep 20 --force
+          echo "✅ 根域名证书申请成功"
+
+      - name: 第二步：申请通配符证书
+        run: |
+          $HOME/.acme.sh/acme.sh --issue --dns dns_dynv6 \
             -d "*.$DOMAIN" \
             --server letsencrypt --dnssleep 20 --force
-          mkdir -p certs_output
-          $HOME/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-            --cert-file certs_output/device.crt \
-            --key-file certs_output/device.key \
-            --ca-file certs_output/rootCA.pem \
-            --fullchain-file certs_output/fullchain.pem
           echo "✅ 通配符证书申请成功"
 
-      - name: 验证证书域名
+      - name: 合并并输出证书
         run: |
-          openssl x509 -in certs_output/device.crt -noout -subject -dates
-          openssl x509 -in certs_output/device.crt -noout -ext subjectAltName
+          # 以根域名证书为基础，将通配符证书的私钥和全链覆盖进去
+          mkdir -p certs_output
+          
+          # 使用根域名的证书目录
+          ROOT_CERT_DIR="$HOME/.acme.sh/$DOMAIN"
+          WILD_CERT_DIR="$HOME/.acme.sh/*.$DOMAIN"
+          
+          # 复制根域名证书（作为基础）
+          cp "$ROOT_CERT_DIR/fullchain.cer" certs_output/fullchain.pem
+          cp "$ROOT_CERT_DIR/$DOMAIN.key" certs_output/device.key
+          cp "$ROOT_CERT_DIR/ca.cer" certs_output/rootCA.pem
+          
+          # 合并通配符域名到 fullchain
+          cat "$WILD_CERT_DIR/fullchain.cer" >> certs_output/fullchain.pem
+          
+          # 生成兼容的 device.crt（仅叶子证书）
+          openssl x509 -in "$ROOT_CERT_DIR/$DOMAIN.cer" -out certs_output/device.crt
+          
+          echo "✅ 证书合并完成"
 
       - name: 上传证书
         uses: actions/upload-artifact@v4
@@ -161,11 +178,11 @@ jobs:
           cp "$BIN_DIR/ngrokd" $DEB_DIR/usr/bin/ 2>/dev/null || true
 
           cat > $DEB_DIR/usr/share/doc/ngrok/README.md << EOF
-          # ngrok for ${DOMAIN}
-          ## 启动命令（无需配置文件）
+          # ngrok for ${DOMAIN} (含通配符证书)
+          ## 启动（自定义子域名直接映射，无需配置文件）
           服务端: ./ngrokd -domain=${DOMAIN}
           客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
-          版本: ${VERSION} | 证书: Let's Encrypt (通配符)
+          版本: ${VERSION} | 证书: Let's Encrypt
           EOF
 
           cat > $DEB_DIR/DEBIAN/control << EOF
@@ -177,8 +194,7 @@ jobs:
           EOF
 
           dpkg-deb --build $DEB_DIR
-          echo "✅ 生成 deb 文件:"
-          ls -la *.deb
+          echo "✅ 生成 $(ls *.deb)"
 
       - name: 打包 (非 Linux zip)
         if: matrix.os != 'linux'
@@ -199,17 +215,16 @@ jobs:
           fi
 
           cat > $PKG_DIR/README.md << EOF
-          # ngrok for ${DOMAIN}
-          ## 启动命令
+          # ngrok for ${DOMAIN} (含通配符证书)
+          ## 启动
           服务端: ./ngrokd -domain=${DOMAIN}
           客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
-          版本: ${VERSION} | 证书: Let's Encrypt (通配符)
+          版本: ${VERSION} | 证书: Let's Encrypt
           EOF
 
           ZIP_FILE="ngrok-${VERSION}-${OS}-${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"
-          echo "✅ 生成 zip 文件:"
-          ls -la *.zip
+          echo "✅ 生成 $ZIP_FILE"
 
       - name: 上传构件
         uses: actions/upload-artifact@v4
@@ -220,7 +235,7 @@ jobs:
             *.zip
           retention-days: 1
 
-  # ========== 创建 Release（强制收集所有包并生成校验文件） ==========
+  # ========== 创建 Release（含 SHA256 校验） ==========
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -234,16 +249,9 @@ jobs:
         with:
           path: artifacts
 
-      - name: 调试 - 查看工件完整目录
-        run: |
-          echo "=== 工件目录结构 ==="
-          find artifacts -type f
-          echo "==================="
-
       - name: 收集所有安装包并生成校验文件
         run: |
           mkdir -p release-files
-          # 递归搜索所有 .deb 和 .zip 文件并复制到 release-files
           find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) -exec cp -v {} release-files/ \;
           
           echo "收集到的文件列表:"
@@ -254,7 +262,6 @@ jobs:
             exit 1
           fi
           
-          # 生成 SHA256 校验文件
           cd release-files
           sha256sum * > checksums.txt
           echo "=== SHA256 校验值 ==="
@@ -267,12 +274,20 @@ jobs:
           name: ngrok for ngrok.dynv6.net - ${{ steps.version.outputs.version }}
           body: |
             ## 🚀 ngrok 通配符证书版
-
             **域名**: `ngrok.dynv6.net`
             **证书**: Let's Encrypt 通配符 `*.ngrok.dynv6.net` (已内置)
-            **构建时间**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-
             ### 一条命令启动（无需配置文件）
-            **服务端**
-            ```bash
+            服务端
             ./ngrokd -domain=ngrok.dynv6.net
+            客户端
+            ./ngrok -hostname=myapp.ngrok.dynv6.net 8080
+            ### 包含的文件
+            - Linux amd64 / arm64 (.deb)
+            - macOS amd64 (.zip)
+            - Windows amd64 / arm64 (.zip)
+            - SHA256 校验文件 checksums.txt
+          files: release-files/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

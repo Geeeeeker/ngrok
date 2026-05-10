@@ -24,10 +24,12 @@ jobs:
             echo "❌ 未配置 DYNV6_TOKEN"
             exit 1
           fi
+
       - name: 安装 acme.sh
         run: |
           curl https://get.acme.sh | sh -s email=ci-bot@github.com
           echo "$HOME/.acme.sh" >> $GITHUB_PATH
+
       - name: 申请 & 安装证书
         run: |
           $HOME/.acme.sh/acme.sh --issue --dns dns_dynv6 -d "$DOMAIN" \
@@ -39,6 +41,15 @@ jobs:
             --ca-file certs_output/rootCA.pem \
             --fullchain-file certs_output/fullchain.pem
           echo "✅ 证书申请成功"
+
+      - name: 验证证书域名
+        run: |
+          echo "证书主题:"
+          openssl x509 -in certs_output/device.crt -noout -subject -dates
+          echo ""
+          echo "SAN 扩展:"
+          openssl x509 -in certs_output/device.crt -noout -ext subjectAltName
+
       - name: 上传证书
         uses: actions/upload-artifact@v4
         with:
@@ -73,6 +84,7 @@ jobs:
             arch: arm64
             goarch: arm64
             goos: windows
+
     steps:
       - name: 检出源码
         uses: actions/checkout@v4
@@ -123,13 +135,14 @@ jobs:
           git clone -- https://gitee.com/mirrors/go-metrics.git src/github.com/rcrowley/go-metrics
           echo "✅ 依赖就绪"
 
-      - name: 编译
+      - name: 编译 (显式传递域名)
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          make release-server
-          make release-client
+          # 关键修复：通过 Makefile 变量传入域名，确保二进制内嵌正确域名
+          make release-server NGROK_DOMAIN="$DOMAIN"
+          make release-client NGROK_DOMAIN="$DOMAIN"
           ls -la bin/
 
       - name: 获取版本号

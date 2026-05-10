@@ -245,7 +245,7 @@ jobs:
           zip -r "$ZIP_FILE" "$PKG_DIR"
           echo "✅ 生成 $ZIP_FILE"
 
-      - name: 上传构件
+      - name: 上传构件（每个平台单独命名）
         uses: actions/upload-artifact@v4
         with:
           name: ngrok-${{ matrix.domain_prefix }}-${{ matrix.os }}-${{ matrix.arch }}
@@ -254,12 +254,12 @@ jobs:
             *.zip
           retention-days: 1
 
-  # ========== 汇总发布 ==========
+  # ========== 汇总发布（含 sha256 校验文件） ==========
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: 取版本时间
+      - name: 获取版本时间
         id: version
         run: echo "version=v$(date +'%Y.%m.%d-%H%M%S')" >> $GITHUB_OUTPUT
 
@@ -268,14 +268,28 @@ jobs:
         with:
           path: artifacts
 
-      - name: 收集安装包
+      - name: 调试 - 查看下载的目录结构
+        run: |
+          echo "=== 所有 artifacts 目录结构 ==="
+          find artifacts -type f
+          echo "=== 查找 deb 和 zip 文件 ==="
+          find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) || echo "未找到任何 deb/zip 文件！"
+
+      - name: 收集所有安装包
         run: |
           mkdir -p release-files
-          find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) -exec cp {} release-files/ \;
-          echo "📦 文件列表:"
+          # 从 artifacts 下任何子目录收集 deb 和 zip 文件
+          find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) -exec cp -v {} release-files/ \;
+          echo "📦 收集到的文件数量: $(ls -1 release-files/ | wc -l)"
           ls -lh release-files/
 
-      - name: 创建 Release
+      - name: 生成 SHA256 校验文件
+        run: |
+          cd release-files
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: 创建 Release 并上传所有文件
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}

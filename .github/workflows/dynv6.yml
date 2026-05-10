@@ -1,4 +1,4 @@
-name: Build ngrok for txddns & shanwei (full matrix)
+name: Build ngrok for txddns & shanwei
 
 on:
   workflow_dispatch:
@@ -55,34 +55,66 @@ jobs:
           path: certs_output/
           retention-days: 1
 
-  # ========== 全平台交叉编译 ==========
+  # ========== 全平台编译（手动列出所有 2×5=10 种组合） ==========
   build:
     needs: issue-certs
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        domain_prefix: [txddns, shanwei]
         include:
-          - os: linux
+          # txddns 域名
+          - domain_prefix: txddns
+            os: linux
             arch: amd64
             goarch: amd64
             goos: linux
-          - os: linux
+          - domain_prefix: txddns
+            os: linux
             arch: arm64
             goarch: arm64
             goos: linux
-          - os: darwin
+          - domain_prefix: txddns
+            os: darwin
             arch: amd64
             goarch: amd64
             goos: darwin
-          - os: windows
+          - domain_prefix: txddns
+            os: windows
             arch: amd64
             goarch: amd64
             goos: windows
-          - os: windows
+          - domain_prefix: txddns
+            os: windows
             arch: arm64
             goarch: arm64
             goos: windows
+          # shanwei 域名
+          - domain_prefix: shanwei
+            os: linux
+            arch: amd64
+            goarch: amd64
+            goos: linux
+          - domain_prefix: shanwei
+            os: linux
+            arch: arm64
+            goarch: arm64
+            goos: linux
+          - domain_prefix: shanwei
+            os: darwin
+            arch: amd64
+            goarch: amd64
+            goos: darwin
+          - domain_prefix: shanwei
+            os: windows
+            arch: amd64
+            goarch: amd64
+            goos: windows
+          - domain_prefix: shanwei
+            os: windows
+            arch: arm64
+            goarch: arm64
+            goos: windows
+
     steps:
       - name: 检出 ngrok 源码
         uses: actions/checkout@v4
@@ -90,13 +122,13 @@ jobs:
           repository: Geeeeeker/ngrok
           fetch-depth: 0
 
-      - name: 下载证书
+      - name: 下载对应域名证书
         uses: actions/download-artifact@v4
         with:
           name: ssl-certs-${{ matrix.domain_prefix }}
           path: ./certs_temp
 
-      - name: 注入证书和域名
+      - name: 注入证书和域名环境变量
         run: |
           DOMAIN="${{ matrix.domain_prefix }}.dynv6.net"
           echo "NGROK_DOMAIN=$DOMAIN" >> $GITHUB_ENV
@@ -164,7 +196,6 @@ jobs:
 
           cat > $DEB_DIR/usr/share/doc/ngrok/README.md << EOF
           # ngrok for ${DOMAIN}
-          
           ## 启动（无需配置文件）
           服务端: ./ngrokd -domain=${DOMAIN}
           客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
@@ -228,20 +259,20 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: 获取版本号
+      - name: 取版本时间
         id: version
         run: echo "version=v$(date +'%Y.%m.%d-%H%M%S')" >> $GITHUB_OUTPUT
 
-      - name: 下载所有成品
+      - name: 下载所有构件
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: 收集包
+      - name: 收集安装包
         run: |
           mkdir -p release-files
           find artifacts -type f \( -name "*.deb" -o -name "*.zip" \) -exec cp {} release-files/ \;
-          echo "📦 将发布的文件:"
+          echo "📦 文件列表:"
           ls -lh release-files/
 
       - name: 创建 Release
@@ -251,10 +282,12 @@ jobs:
           name: ngrok txddns & shanwei - ${{ steps.version.outputs.version }}
           body: |
             ## 🚀 ngrok 双域名 · 全平台
-            **域名**: `txddns.dynv6.net` · `shanwei.dynv6.net`
-            **证书**: Let's Encrypt (Dynv6 DNS) · 已内置
 
-            ### 启动命令（无需配置文件）
+            **域名**: `txddns.dynv6.net` · `shanwei.dynv6.net`
+            **证书**: Let's Encrypt (已内置) · 每 80 天自动续期
+
+            ### 一条命令启动（无需配置文件）
+
             #### 服务端
             ```bash
             ./ngrokd -domain=txddns.dynv6.net

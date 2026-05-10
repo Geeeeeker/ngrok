@@ -163,21 +163,21 @@ jobs:
           cp "$BIN_DIR/ngrokd" $DEB_DIR/usr/bin/ 2>/dev/null || true
 
           cat > $DEB_DIR/usr/share/doc/ngrok/README.md << EOF
-# ngrok for ${DOMAIN}
-
-## 启动（无需配置文件）
-服务端: ./ngrokd -domain=${DOMAIN}
-客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
-版本: ${VERSION} | 证书: Let's Encrypt
-EOF
+          # ngrok for ${DOMAIN}
+          
+          ## 启动（无需配置文件）
+          服务端: ./ngrokd -domain=${DOMAIN}
+          客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
+          版本: ${VERSION} | 证书: Let's Encrypt
+          EOF
 
           cat > $DEB_DIR/DEBIAN/control << EOF
-Package: ngrok-${PREFIX}
-Version: $PKG_VER
-Architecture: $ARCH
-Maintainer: CI Bot
-Description: ngrok for ${DOMAIN}
-EOF
+          Package: ngrok-${PREFIX}
+          Version: $PKG_VER
+          Architecture: $ARCH
+          Maintainer: CI Bot
+          Description: ngrok for ${DOMAIN}
+          EOF
 
           dpkg-deb --build $DEB_DIR
           echo "✅ 生成 $(ls *.deb)"
@@ -203,12 +203,12 @@ EOF
           fi
 
           cat > $PKG_DIR/README.md << EOF
-# ngrok for ${DOMAIN}
-## 启动
-服务端: ./ngrokd -domain=${DOMAIN}
-客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
-版本: ${VERSION} | 证书: Let's Encrypt
-EOF
+          # ngrok for ${DOMAIN}
+          ## 启动
+          服务端: ./ngrokd -domain=${DOMAIN}
+          客户端: ./ngrok -hostname=myapp.${DOMAIN} 8080
+          版本: ${VERSION} | 证书: Let's Encrypt
+          EOF
 
           ZIP_FILE="ngrok-${PREFIX}-${VERSION}-${OS}-${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"

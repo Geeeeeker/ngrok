@@ -237,20 +237,20 @@ jobs:
           fi
           
           cat > $PKG_DIR/README.md << EOF
-# ngrok for ${DOMAIN}
-
-## 启动（无需配置文件）
-
-服务端：
-  ./ngrokd -domain=${DOMAIN}
-
-客户端：
-  ./ngrok -hostname=myapp.${DOMAIN} 8080
-  ./ngrok -subdomain=myapp -hostname=${DOMAIN} 8080
-
-版本: ${VERSION}
-证书: Let's Encrypt (已内置)
-EOF
+          # ngrok for ${DOMAIN}
+          
+          ## 启动（无需配置文件）
+          
+          服务端：
+            ./ngrokd -domain=${DOMAIN}
+          
+          客户端：
+            ./ngrok -hostname=myapp.${DOMAIN} 8080
+            ./ngrok -subdomain=myapp -hostname=${DOMAIN} 8080
+          
+          版本: ${VERSION}
+          证书: Let's Encrypt (已内置)
+          EOF
 
           ZIP_FILE="ngrok_${PREFIX}_${VERSION}_${OS}_${ARCH}.zip"
           zip -r "$ZIP_FILE" "$PKG_DIR"
